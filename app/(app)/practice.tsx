@@ -7,15 +7,17 @@ import {
   ScrollView,
   Alert,
 } from "react-native";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "expo-router";
 import { usePracticeQuestions } from "../../src/hooks/usePracticeQuestions";
+import { useProgress } from "../../src/context/ProgressContext";
 import type { PracticeQuestion } from "../../src/lib/questions";
 
 const PRACTICE_QUESTION_COUNT = 10;
 
 export default function PracticeScreen() {
   const router = useRouter();
+  const { saveSession } = useProgress();
   const { data: questions, isLoading, error } = usePracticeQuestions(
     PRACTICE_QUESTION_COUNT
   );
@@ -24,6 +26,15 @@ export default function PracticeScreen() {
   const [correctCount, setCorrectCount] = useState(0);
   const [completed, setCompleted] = useState(false);
   const [answers, setAnswers] = useState<boolean[]>([]);
+
+  // Save session result when completed (only once)
+  const [hasSaved, setHasSaved] = useState(false);
+  useEffect(() => {
+    if (completed && questions && !hasSaved) {
+      saveSession(correctCount, questions.length);
+      setHasSaved(true);
+    }
+  }, [completed, correctCount, questions, saveSession, hasSaved]);
 
   // Handle answer selection
   const handleAnswerSelect = (optionIndex: number) => {
@@ -56,6 +67,7 @@ export default function PracticeScreen() {
     setCorrectCount(0);
     setCompleted(false);
     setAnswers([]);
+    setHasSaved(false);
   };
 
   // Loading state
