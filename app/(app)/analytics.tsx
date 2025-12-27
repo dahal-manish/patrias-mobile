@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
 } from "react-native";
-import { useRouter } from "expo-router";
 import {
   useOverallStats,
   useRecentSessions,
@@ -14,8 +13,7 @@ import {
   useCategoryPerformance,
 } from "../../src/hooks/useAnalytics";
 
-export default function ProgressScreen() {
-  const router = useRouter();
+export default function AnalyticsScreen() {
   const { data: overallStats, isLoading: loadingOverall } = useOverallStats();
   const { data: recentSessions, isLoading: loadingSessions } = useRecentSessions(10);
   const { data: moduleStats, isLoading: loadingModule } = useModuleStats("mcq");
@@ -36,12 +34,9 @@ export default function ProgressScreen() {
   if (isLoading) {
     return (
       <View style={styles.container}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backButtonText}>← Back</Text>
-        </TouchableOpacity>
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color="#10b981" />
-          <Text style={styles.loadingText}>Loading your progress...</Text>
+          <Text style={styles.loadingText}>Loading your analytics...</Text>
         </View>
       </View>
     );
@@ -49,16 +44,11 @@ export default function ProgressScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Back button */}
-      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-        <Text style={styles.backButtonText}>← Back</Text>
-      </TouchableOpacity>
-
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.contentContainer}
       >
-        <Text style={styles.title}>Your Progress</Text>
+        <Text style={styles.title}>Analytics</Text>
 
         {/* Overall Stats */}
         {overallStats && (
@@ -185,26 +175,20 @@ export default function ProgressScreen() {
         {/* Empty State */}
         {!overallStats && !moduleStats && (!recentSessions || recentSessions.length === 0) && (
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyTitle}>No Practice Data Yet</Text>
+            <Text style={styles.emptyTitle}>No Analytics Data Yet</Text>
             <Text style={styles.emptyText}>
               Complete practice sessions to see your progress and analytics here.
             </Text>
             <TouchableOpacity
               style={styles.button}
-              onPress={() => router.push("/(app)/practice")}
+              onPress={() => {
+                // Navigation handled by tab bar
+              }}
             >
               <Text style={styles.buttonText}>Start Practice</Text>
             </TouchableOpacity>
           </View>
         )}
-
-        {/* Practice Again Button */}
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => router.push("/(app)/practice")}
-        >
-          <Text style={styles.buttonText}>Practice Again</Text>
-        </TouchableOpacity>
       </ScrollView>
     </View>
   );
@@ -218,20 +202,6 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
-  backButton: {
-    padding: 16,
-    paddingTop: 48,
-    paddingBottom: 8,
-  },
-  backButtonText: {
-    fontSize: 16,
-    color: "#10b981",
-    fontWeight: "600",
-  },
-  contentContainer: {
-    padding: 24,
-    paddingTop: 0,
-  },
   centerContainer: {
     flex: 1,
     justifyContent: "center",
@@ -242,6 +212,10 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
     color: "#6b7280",
+  },
+  contentContainer: {
+    padding: 24,
+    paddingTop: 48,
   },
   title: {
     fontSize: 28,
@@ -401,7 +375,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: "center",
     alignItems: "center",
-    marginTop: 8,
+    paddingHorizontal: 32,
   },
   buttonText: {
     color: "#fff",
@@ -409,3 +383,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
+

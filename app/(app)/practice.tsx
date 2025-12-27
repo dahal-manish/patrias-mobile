@@ -6,35 +6,125 @@ import {
   ActivityIndicator,
   ScrollView,
   Alert,
+  Dimensions,
 } from "react-native";
 import { useState, useEffect } from "react";
 import { useRouter } from "expo-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { usePracticeQuestions } from "../../src/hooks/usePracticeQuestions";
 import { useProgress } from "../../src/context/ProgressContext";
+import { usePracticeSession } from "../../src/context/PracticeSessionContext";
+import { saveAttempt, savePracticeSession as saveSessionToDB } from "../../src/lib/progressSync";
 import type { PracticeQuestion } from "../../src/lib/questions";
 
 const PRACTICE_QUESTION_COUNT = 10;
+const SCREEN_HEIGHT = Dimensions.get("window").height;
+const TOP_MARGIN = SCREEN_HEIGHT * 0.1;
+const BOTTOM_MARGIN = SCREEN_HEIGHT * 0.1;
 
 export default function PracticeScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { saveSession } = useProgress();
-  const { data: questions, isLoading, error } = usePracticeQuestions(
+  const {
+    savedSession,
+    saveSession: savePracticeSession,
+    clearSession,
+    hasActiveSession,
+  } = usePracticeSession();
+  const { data: fetchedQuestions, isLoading, error } = usePracticeQuestions(
     PRACTICE_QUESTION_COUNT
+  );
+  
+  // Use saved questions if resuming, otherwise use fetched questions
+  const [questions, setQuestions] = useState<PracticeQuestion[] | undefined>(
+    undefined
   );
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [correctCount, setCorrectCount] = useState(0);
   const [completed, setCompleted] = useState(false);
   const [answers, setAnswers] = useState<boolean[]>([]);
+  const [userAnswers, setUserAnswers] = useState<string[]>([]); // Track selected option text
+  const [hasCheckedResume, setHasCheckedResume] = useState(false);
+  const [isResuming, setIsResuming] = useState(false);
+
+  // Check for saved session on mount and show resume dialog
+  useEffect(() => {
+    if (!isLoading && fetchedQuestions && !hasCheckedResume) {
+      setHasCheckedResume(true);
+      
+      if (hasActiveSession() && savedSession) {
+        // Show resume dialog
+        Alert.alert(
+          "Resume Practice?",
+          `You have an incomplete practice session. Would you like to resume from question ${savedSession.currentIndex + 1}?`,
+          [
+            {
+              text: "Start New",
+              style: "cancel",
+              onPress: () => {
+                clearSession();
+                setQuestions(fetchedQuestions);
+                setCurrentIndex(0);
+                setAnswers([]);
+                setUserAnswers([]);
+                setCorrectCount(0);
+                setSelectedAnswer(null);
+                setCompleted(false);
+                setIsResuming(false);
+              },
+            },
+            {
+              text: "Resume",
+              onPress: () => {
+                // Restore saved session with saved questions
+                setIsResuming(true);
+                setQuestions(savedSession.questions);
+                setCurrentIndex(savedSession.currentIndex);
+                setAnswers(savedSession.answers);
+                setCorrectCount(savedSession.correctCount);
+                setSelectedAnswer(null);
+              },
+            },
+          ]
+        );
+      } else {
+        // No saved session, use fetched questions
+        setQuestions(fetchedQuestions);
+      }
+    }
+  }, [
+    isLoading,
+    fetchedQuestions,
+    hasCheckedResume,
+    hasActiveSession,
+    savedSession,
+    clearSession,
+  ]);
 
   // Save session result when completed (only once)
   const [hasSaved, setHasSaved] = useState(false);
   useEffect(() => {
-    if (completed && questions && !hasSaved) {
+    if (completed && questions && !hasSaved && answers.length === questions.length) {
+      // Save to local storage (for backward compatibility)
       saveSession(correctCount, questions.length);
+      
+      // Save all attempts to database
+      saveSessionToDB(questions, answers, userAnswers).then((result) => {
+        if (result.success) {
+          console.log(`Synced ${result.synced} attempts to database`);
+          // Invalidate analytics queries to refresh data
+          queryClient.invalidateQueries({ queryKey: ["analytics"] });
+        } else {
+          console.warn(`Failed to sync ${result.failed} attempts`);
+        }
+      });
+      
+      clearSession(); // Clear practice session when completed
       setHasSaved(true);
     }
-  }, [completed, correctCount, questions, saveSession, hasSaved]);
+  }, [completed, correctCount, questions, answers, userAnswers, saveSession, hasSaved, clearSession, queryClient]);
 
   // Handle answer selection
   const handleAnswerSelect = (optionIndex: number) => {
@@ -42,12 +132,27 @@ export default function PracticeScreen() {
 
     setSelectedAnswer(optionIndex);
     const isCorrect = optionIndex === questions[currentIndex].correctIndex;
+    const selectedOptionText = questions[currentIndex].options[optionIndex];
+    
     const newAnswers = [...answers, isCorrect];
+    const newUserAnswers = [...userAnswers, selectedOptionText];
     setAnswers(newAnswers);
+    setUserAnswers(newUserAnswers);
 
     if (isCorrect) {
       setCorrectCount((prev) => prev + 1);
     }
+
+    // Save attempt to database immediately
+    saveAttempt(
+      questions[currentIndex].id,
+      isCorrect,
+      selectedOptionText,
+      "mcq"
+    ).catch((error) => {
+      console.error("Error saving attempt:", error);
+      // Error is already handled in saveAttempt (queued for retry)
+    });
 
     // Move to next question after a brief delay
     setTimeout(() => {
@@ -60,6 +165,21 @@ export default function PracticeScreen() {
     }, 1000);
   };
 
+  // Handle back button press
+  const handleBack = () => {
+    if (!questions) {
+      router.back();
+      return;
+    }
+
+    // If user has answered at least one question, save progress
+    if (answers.length > 0) {
+      savePracticeSession(questions, currentIndex, answers, correctCount);
+    }
+
+    router.back();
+  };
+
   // Reset practice session
   const handleReset = () => {
     setCurrentIndex(0);
@@ -67,15 +187,19 @@ export default function PracticeScreen() {
     setCorrectCount(0);
     setCompleted(false);
     setAnswers([]);
+    setUserAnswers([]);
     setHasSaved(false);
+    clearSession();
   };
 
   // Loading state
-  if (isLoading) {
+  if (isLoading || !questions) {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#10b981" />
-        <Text style={styles.loadingText}>Loading questions...</Text>
+        <Text style={styles.loadingText}>
+          {isResuming ? "Resuming practice..." : "Loading questions..."}
+        </Text>
       </View>
     );
   }
@@ -97,8 +221,8 @@ export default function PracticeScreen() {
     );
   }
 
-  // No questions
-  if (!questions || questions.length === 0) {
+  // No questions (shouldn't happen if loading handled correctly, but safety check)
+  if (questions.length === 0) {
     return (
       <View style={styles.centerContainer}>
         <Text style={styles.errorText}>No questions available.</Text>
@@ -154,29 +278,36 @@ export default function PracticeScreen() {
   const progress = ((currentIndex + 1) / questions.length) * 100;
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.contentContainer}
-    >
-      {/* Progress bar */}
-      <View style={styles.progressContainer}>
-        <View style={styles.progressBar}>
-          <View
-            style={[styles.progressFill, { width: `${progress}%` }]}
-          />
-        </View>
-        <Text style={styles.progressText}>
-          Question {currentIndex + 1} of {questions.length}
-        </Text>
-      </View>
+    <View style={styles.container}>
+      {/* Back button */}
+      <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+        <Text style={styles.backButtonText}>← Back</Text>
+      </TouchableOpacity>
 
-      {/* Question */}
-      <View style={styles.questionContainer}>
-        <Text style={styles.questionText}>{currentQuestion.text}</Text>
-      </View>
+      <View style={styles.contentWrapper}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.contentContainer}
+        >
+          {/* Progress bar */}
+          <View style={styles.progressContainer}>
+            <View style={styles.progressBar}>
+              <View
+                style={[styles.progressFill, { width: `${progress}%` }]}
+              />
+            </View>
+            <Text style={styles.progressText}>
+              Question {currentIndex + 1} of {questions.length}
+            </Text>
+          </View>
 
-      {/* Answer options */}
-      <View style={styles.optionsContainer}>
+          {/* Question */}
+          <View style={styles.questionContainer}>
+            <Text style={styles.questionText}>{currentQuestion.text}</Text>
+          </View>
+
+          {/* Answer options */}
+          <View style={styles.optionsContainer}>
         {currentQuestion.options.map((option, index) => {
           const isSelected = selectedAnswer === index;
           const isCorrect = index === currentQuestion.correctIndex;
@@ -227,8 +358,10 @@ export default function PracticeScreen() {
               : `✗ Incorrect. The correct answer is: ${currentQuestion.options[currentQuestion.correctIndex]}`}
           </Text>
         </View>
-      )}
-    </ScrollView>
+        )}
+        </ScrollView>
+      </View>
+    </View>
   );
 }
 
@@ -237,8 +370,29 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
   },
+  contentWrapper: {
+    flex: 1,
+    paddingTop: TOP_MARGIN,
+    paddingBottom: BOTTOM_MARGIN,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  backButton: {
+    padding: 16,
+    paddingTop: 48,
+    paddingBottom: 8,
+  },
+  backButtonText: {
+    fontSize: 16,
+    color: "#10b981",
+    fontWeight: "600",
+  },
   contentContainer: {
     padding: 24,
+    paddingTop: 0,
+    flexGrow: 1,
+    justifyContent: "space-between",
   },
   centerContainer: {
     flex: 1,
@@ -279,12 +433,14 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   questionContainer: {
-    marginBottom: 32,
+    marginBottom: 24,
     padding: 20,
     backgroundColor: "#f9fafb",
     borderRadius: 12,
     borderLeftWidth: 4,
     borderLeftColor: "#10b981",
+    flex: 1,
+    justifyContent: "center",
   },
   questionText: {
     fontSize: 18,
@@ -293,8 +449,10 @@ const styles = StyleSheet.create({
     lineHeight: 26,
   },
   optionsContainer: {
-    gap: 12,
+    gap: 16,
     marginBottom: 24,
+    flex: 2,
+    justifyContent: "space-around",
   },
   optionButton: {
     padding: 16,
