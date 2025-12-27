@@ -35,23 +35,42 @@ export default function SignupScreen() {
     }
 
     setLoading(true);
-    const { error } = await signup(email.trim(), password);
+    const result = await signup(email.trim(), password);
     setLoading(false);
 
-    if (error) {
-      Alert.alert("Signup Failed", error.message || "An error occurred during signup");
-    } else {
-      // If signup succeeds and session is returned, navigation happens automatically
-      // Otherwise, show a message about email confirmation if needed
+    if (result.error) {
+      Alert.alert("Signup Failed", result.error.message || "An error occurred during signup");
+    } else if (result.needsEmailConfirmation) {
+      // User needs to confirm email
       Alert.alert(
-        "Success",
-        "Account created! Please check your email to confirm your account.",
+        "Check Your Email",
+        "We've sent you a confirmation email. Please click the link in the email to verify your account, then you can sign in.",
         [
           {
             text: "OK",
             onPress: () => router.push("/(auth)/login"),
           },
         ]
+      );
+    } else if (result.user && !result.user.email_confirmed_at) {
+      // User created but needs confirmation
+      Alert.alert(
+        "Check Your Email",
+        "Please check your email and click the confirmation link to activate your account.",
+        [
+          {
+            text: "OK",
+            onPress: () => router.push("/(auth)/login"),
+          },
+        ]
+      );
+    } else {
+      // Session was returned, user is automatically logged in
+      // Navigation will happen automatically via AuthContext
+      Alert.alert(
+        "Success!",
+        "Your account has been created and you're now signed in.",
+        [{ text: "OK" }]
       );
     }
   };

@@ -1,17 +1,23 @@
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from "react-native";
 import { useState, useEffect } from "react";
 import { useAuth } from "../../src/context/AuthContext";
 import { useRouter } from "expo-router";
+import { useOverallStats } from "../../src/hooks/useAnalytics";
+import { getCurrentStreak, hasPracticedToday } from "../../src/lib/streaks";
 import {
   scheduleDailyReminder,
   isDailyReminderScheduled,
 } from "../../src/lib/notifications";
 
 export default function HomeScreen() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const router = useRouter();
+  const { data: overallStats, isLoading: loadingStats } = useOverallStats();
   const [isScheduling, setIsScheduling] = useState(false);
   const [reminderScheduled, setReminderScheduled] = useState(false);
+  const [streak, setStreak] = useState<{ current_streak: number; longest_streak: number } | null>(null);
+  const [practicedToday, setPracticedToday] = useState<boolean>(false);
+  const [loadingStreak, setLoadingStreak] = useState(true);
 
   // Check if reminder is already scheduled on mount
   useEffect(() => {
@@ -22,10 +28,25 @@ export default function HomeScreen() {
     checkReminderStatus();
   }, []);
 
-  const handleLogout = async () => {
-    await logout();
-    // Navigation will happen automatically via AuthContext state change
-  };
+  // Load streak and today's practice status
+  useEffect(() => {
+    const loadStreakData = async () => {
+      setLoadingStreak(true);
+      try {
+        const streakData = await getCurrentStreak();
+        if (streakData) {
+          setStreak(streakData);
+        }
+        const practiced = await hasPracticedToday();
+        setPracticedToday(practiced);
+      } catch (error) {
+        console.error("Error loading streak data:", error);
+      } finally {
+        setLoadingStreak(false);
+      }
+    };
+    loadStreakData();
+  }, []);
 
   const handleSetReminder = async () => {
     setIsScheduling(true);
@@ -63,6 +84,41 @@ export default function HomeScreen() {
       <Text style={styles.welcomeText}>Welcome!</Text>
       <Text style={styles.emailText}>{user?.email}</Text>
 
+      {/* Quick Stats */}
+      {(overallStats || streak) && (
+        <View style={styles.statsContainer}>
+          {streak && (
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>{streak.current_streak}</Text>
+              <Text style={styles.statLabel}>Day Streak</Text>
+              {practicedToday && (
+                <View style={styles.todayBadge}>
+                  <Text style={styles.todayBadgeText}>✓ Today</Text>
+                </View>
+              )}
+            </View>
+          )}
+          {overallStats && (
+            <>
+              <View style={styles.statCard}>
+                <Text style={styles.statValue}>{overallStats.totalQuestions}</Text>
+                <Text style={styles.statLabel}>Questions</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statValue}>{overallStats.accuracy.toFixed(0)}%</Text>
+                <Text style={styles.statLabel}>Accuracy</Text>
+              </View>
+            </>
+          )}
+        </View>
+      )}
+
+      {loadingStreak && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="small" color="#10b981" />
+        </View>
+      )}
+
       <View style={styles.buttonContainer}>
         <TouchableOpacity
           style={styles.button}
@@ -73,9 +129,16 @@ export default function HomeScreen() {
 
         <TouchableOpacity
           style={styles.button}
-          onPress={() => router.push("/(app)/progress")}
+          onPress={() => router.push("/(app)/study")}
         >
-          <Text style={styles.buttonText}>View progress</Text>
+          <Text style={styles.buttonText}>Study Hub</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.button}
+          onPress={() => router.push("/(app)/analytics")}
+        >
+          <Text style={styles.buttonText}>View Analytics</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -102,13 +165,6 @@ export default function HomeScreen() {
               : "Set daily reminder"}
           </Text>
         </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.button, styles.buttonDanger]}
-          onPress={handleLogout}
-        >
-          <Text style={[styles.buttonText, styles.buttonTextDanger]}>Log out</Text>
-        </TouchableOpacity>
       </View>
     </View>
   );
@@ -130,7 +186,51 @@ const styles = StyleSheet.create({
   emailText: {
     fontSize: 16,
     color: "#6b7280",
-    marginBottom: 32,
+    marginBottom: 24,
+  },
+  statsContainer: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 24,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: "#f9fafb",
+    borderRadius: 12,
+    padding: 16,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    position: "relative",
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#10b981",
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: "#6b7280",
+    textAlign: "center",
+  },
+  todayBadge: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    backgroundColor: "#10b981",
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  todayBadgeText: {
+    fontSize: 10,
+    color: "#fff",
+    fontWeight: "600",
+  },
+  loadingContainer: {
+    alignItems: "center",
+    marginBottom: 16,
   },
   buttonContainer: {
     gap: 16,

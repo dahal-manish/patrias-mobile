@@ -1,10 +1,8 @@
 import React from "react";
-import { Stack } from "expo-router";
+import { Slot } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "../src/context/AuthContext";
 import { View, Text, ActivityIndicator, StyleSheet } from "react-native";
-// Initialize notification handler
-import "../src/lib/notifications";
 
 // Create a QueryClient instance for React Query
 const queryClient = new QueryClient();
@@ -36,16 +34,7 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <AuthGate>
-          <Stack
-            screenOptions={{
-              headerShown: false,
-            }}
-          >
-            {/* Auth stack - shown when user is not authenticated */}
-            <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-            {/* App stack - shown when user is authenticated */}
-            <Stack.Screen name="(app)" options={{ headerShown: false }} />
-          </Stack>
+          <Slot />
         </AuthGate>
       </AuthProvider>
     </QueryClientProvider>

@@ -1,15 +1,6 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 
-// Configure how notifications are handled when the app is in the foreground
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
-
 // Notification identifier for the daily reminder
 const DAILY_REMINDER_ID = "daily-practice-reminder";
 
@@ -65,7 +56,6 @@ export async function scheduleDailyReminder(): Promise<boolean> {
       type: Notifications.SchedulableTriggerInputTypes.DAILY,
       hour: 20, // 8 PM
       minute: 0,
-      repeats: true,
     };
 
     await Notifications.scheduleNotificationAsync({

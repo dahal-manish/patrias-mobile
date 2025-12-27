@@ -11,7 +11,11 @@ interface AuthContextType {
   session: Session | null;
   initializing: boolean;
   login: (email: string, password: string) => Promise<{ error: any }>;
-  signup: (email: string, password: string) => Promise<{ error: any }>;
+  signup: (email: string, password: string) => Promise<{ 
+    error: any; 
+    needsEmailConfirmation?: boolean;
+    user?: User | null;
+  }>;
   logout: () => Promise<void>;
 }
 
@@ -173,15 +177,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signup = async (email: string, password: string) => {
     try {
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: email.trim().toLowerCase(),
         password,
+        options: {
+          // For mobile, we can't use a web redirect URL
+          // Email confirmation will be handled via the email link
+          // If email confirmation is disabled in Supabase, session will be returned immediately
+        },
       });
 
       if (error) {
         return { error };
       }
 
-      // If session is returned (email confirmation disabled), save it
+      // Check if user needs email confirmation
+      const needsConfirmation = !!(data.user && !data.user.email_confirmed_at && !data.session);
+
+      // If session is returned (email confirmation disabled or already confirmed), save it
       if (data.session) {
         try {
           await SecureStore.setItemAsync(
@@ -193,7 +205,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      return { error: null };
+      return { 
+        error: null,
+        needsEmailConfirmation: needsConfirmation || undefined,
+        user: data.user || undefined,
+      };
     } catch (err) {
       console.error("AuthProvider: Signup error:", err);
       return { error: err };
