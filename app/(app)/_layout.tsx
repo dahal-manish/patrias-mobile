@@ -1,10 +1,14 @@
-import { Stack } from "expo-router";
+import { Slot, Redirect, useSegments } from "expo-router";
 import { useAuth } from "../../src/context/AuthContext";
-import { Redirect } from "expo-router";
 import { ProgressProvider } from "../../src/context/ProgressContext";
+import { BottomTabBar } from "../../components/BottomTabBar";
+import { View, StyleSheet } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function AppLayout() {
   const { user, initializing } = useAuth();
+  const segments = useSegments();
+  const insets = useSafeAreaInsets();
 
   // If user is not authenticated, redirect to auth stack
   if (!initializing && !user) {
@@ -16,41 +20,37 @@ export default function AppLayout() {
     return null;
   }
 
+  // Hide tab bar on practice screen
+  const hideTabBar = segments.includes("practice");
+
   return (
     <ProgressProvider>
-      <Stack
-        screenOptions={{
-          headerShown: true,
-          title: "Patrias",
-          headerStyle: {
-            backgroundColor: "#10b981",
-          },
-          headerTintColor: "#fff",
-          headerTitleStyle: {
-            fontWeight: "bold",
-          },
-        }}
-      >
-        <Stack.Screen
-          name="home"
-          options={{
-            title: "Home",
-          }}
-        />
-        <Stack.Screen
-          name="practice"
-          options={{
-            title: "Practice",
-          }}
-        />
-        <Stack.Screen
-          name="progress"
-          options={{
-            title: "Progress",
-          }}
-        />
-      </Stack>
+      <View style={styles.container}>
+        <View style={styles.content}>
+          <Slot />
+        </View>
+        {!hideTabBar && (
+          <View style={[styles.tabBarContainer, { paddingBottom: insets.bottom }]}>
+            <BottomTabBar />
+          </View>
+        )}
+      </View>
     </ProgressProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
+  content: {
+    flex: 1,
+  },
+  tabBarContainer: {
+    backgroundColor: "#fff",
+    borderTopWidth: 1,
+    borderTopColor: "#e5e7eb",
+  },
+});
 

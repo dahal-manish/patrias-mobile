@@ -6,18 +6,27 @@ import {
   ActivityIndicator,
   ScrollView,
   Alert,
+  Dimensions,
 } from "react-native";
 import { useState, useEffect } from "react";
 import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { usePracticeQuestions } from "../../src/hooks/usePracticeQuestions";
 import { useProgress } from "../../src/context/ProgressContext";
 import type { PracticeQuestion } from "../../src/lib/questions";
 
 const PRACTICE_QUESTION_COUNT = 10;
+const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 export default function PracticeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { saveSession } = useProgress();
+  
+  // Ensure insets are always defined
+  const safeTop = insets?.top ?? 0;
+  const contentHeight = SCREEN_HEIGHT * 0.7;
   const { data: questions, isLoading, error } = usePracticeQuestions(
     PRACTICE_QUESTION_COUNT
   );
@@ -70,6 +79,37 @@ export default function PracticeScreen() {
     setHasSaved(false);
   };
 
+  // Handle back button press
+  const handleBackPress = () => {
+    // If session is completed, just go back
+    if (completed) {
+      router.back();
+      return;
+    }
+
+    // If in the middle of a session, show confirmation
+    if (currentIndex > 0 || selectedAnswer !== null) {
+      Alert.alert(
+        "Leave Practice Session?",
+        "Your progress will not be saved if you leave now. Are you sure you want to exit?",
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+          },
+          {
+            text: "Leave",
+            style: "destructive",
+            onPress: () => router.back(),
+          },
+        ]
+      );
+    } else {
+      // If at the start, just go back
+      router.back();
+    }
+  };
+
   // Loading state
   if (isLoading) {
     return (
@@ -116,11 +156,26 @@ export default function PracticeScreen() {
   if (completed) {
     const percentage = Math.round((correctCount / questions.length) * 100);
     return (
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.contentContainer}
-      >
-        <View style={styles.summaryContainer}>
+      <View style={styles.container}>
+        {/* Header with back button */}
+        <View style={[styles.header, { paddingTop: safeTop + 30 }]}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={handleBackPress}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="arrow-back" size={24} color="#1f2937" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Practice Complete</Text>
+          <View style={styles.backButton} />
+        </View>
+        <View style={styles.contentWrapper}>
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={[styles.contentContainer, styles.summaryContentContainer, { minHeight: contentHeight }]}
+            showsVerticalScrollIndicator={false}
+          >
+          <View style={styles.summaryContainer}>
           <Text style={styles.summaryTitle}>Practice Complete!</Text>
           <Text style={styles.summaryScore}>
             You scored {correctCount} / {questions.length}
@@ -145,7 +200,9 @@ export default function PracticeScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </ScrollView>
+          </ScrollView>
+        </View>
+      </View>
     );
   }
 
@@ -154,29 +211,45 @@ export default function PracticeScreen() {
   const progress = ((currentIndex + 1) / questions.length) * 100;
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.contentContainer}
-    >
-      {/* Progress bar */}
-      <View style={styles.progressContainer}>
-        <View style={styles.progressBar}>
-          <View
-            style={[styles.progressFill, { width: `${progress}%` }]}
-          />
+    <View style={styles.container}>
+      {/* Header with back button */}
+      <View style={[styles.header, { paddingTop: safeTop + 30 }]}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={handleBackPress}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="arrow-back" size={24} color="#1f2937" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Practice Session</Text>
+        <View style={styles.backButton} />
+      </View>
+
+      <View style={styles.contentWrapper}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={[styles.contentContainer, { minHeight: contentHeight }]}
+          showsVerticalScrollIndicator={false}
+        >
+        {/* Progress bar */}
+        <View style={styles.progressContainer}>
+          <View style={styles.progressBar}>
+            <View
+              style={[styles.progressFill, { width: `${progress}%` }]}
+            />
+          </View>
+          <Text style={styles.progressText}>
+            Question {currentIndex + 1} of {questions.length}
+          </Text>
         </View>
-        <Text style={styles.progressText}>
-          Question {currentIndex + 1} of {questions.length}
-        </Text>
-      </View>
 
-      {/* Question */}
-      <View style={styles.questionContainer}>
-        <Text style={styles.questionText}>{currentQuestion.text}</Text>
-      </View>
+        {/* Question */}
+        <View style={styles.questionContainer}>
+          <Text style={styles.questionText}>{currentQuestion.text}</Text>
+        </View>
 
-      {/* Answer options */}
-      <View style={styles.optionsContainer}>
+        {/* Answer options */}
+        <View style={styles.optionsContainer}>
         {currentQuestion.options.map((option, index) => {
           const isSelected = selectedAnswer === index;
           const isCorrect = index === currentQuestion.correctIndex;
@@ -228,7 +301,9 @@ export default function PracticeScreen() {
           </Text>
         </View>
       )}
-    </ScrollView>
+        </ScrollView>
+      </View>
+    </View>
   );
 }
 
@@ -237,8 +312,40 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
   },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
+    backgroundColor: "#fff",
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#1f2937",
+  },
+  contentWrapper: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "stretch",
+  },
+  scrollView: {
+    flex: 1,
+  },
   contentContainer: {
-    padding: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+    flexGrow: 1,
+    justifyContent: "center",
   },
   centerContainer: {
     flex: 1,
@@ -259,50 +366,52 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   progressContainer: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   progressBar: {
-    height: 8,
+    height: 6,
     backgroundColor: "#e5e7eb",
-    borderRadius: 4,
+    borderRadius: 3,
     overflow: "hidden",
     marginBottom: 8,
   },
   progressFill: {
     height: "100%",
     backgroundColor: "#10b981",
-    borderRadius: 4,
+    borderRadius: 3,
   },
   progressText: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#6b7280",
     textAlign: "center",
+    fontWeight: "500",
   },
   questionContainer: {
-    marginBottom: 32,
-    padding: 20,
+    marginBottom: 20,
+    padding: 16,
     backgroundColor: "#f9fafb",
     borderRadius: 12,
     borderLeftWidth: 4,
     borderLeftColor: "#10b981",
   },
   questionText: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "600",
     color: "#1f2937",
-    lineHeight: 26,
+    lineHeight: 24,
   },
   optionsContainer: {
-    gap: 12,
-    marginBottom: 24,
+    gap: 10,
+    marginBottom: 16,
   },
   optionButton: {
-    padding: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     backgroundColor: "#fff",
     borderWidth: 2,
     borderColor: "#d1d5db",
     borderRadius: 8,
-    minHeight: 56,
+    minHeight: 52,
     justifyContent: "center",
   },
   optionCorrect: {
@@ -317,9 +426,10 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   optionText: {
-    fontSize: 16,
+    fontSize: 15,
     color: "#1f2937",
     fontWeight: "500",
+    lineHeight: 20,
   },
   optionTextCorrect: {
     color: "#065f46",
@@ -331,14 +441,15 @@ const styles = StyleSheet.create({
     color: "#9ca3af",
   },
   feedbackContainer: {
-    marginTop: 16,
-    padding: 16,
+    marginTop: 12,
+    padding: 14,
     backgroundColor: "#f9fafb",
     borderRadius: 8,
   },
   feedbackText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "500",
+    lineHeight: 20,
   },
   feedbackCorrect: {
     color: "#065f46",
@@ -346,31 +457,38 @@ const styles = StyleSheet.create({
   feedbackIncorrect: {
     color: "#991b1b",
   },
+  summaryContentContainer: {
+    justifyContent: "center",
+    minHeight: "100%",
+  },
   summaryContainer: {
     alignItems: "center",
-    paddingVertical: 48,
+    paddingVertical: 32,
   },
   summaryTitle: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: "bold",
     color: "#1f2937",
-    marginBottom: 16,
+    marginBottom: 12,
+    textAlign: "center",
   },
   summaryScore: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "600",
     color: "#10b981",
     marginBottom: 8,
+    textAlign: "center",
   },
   summaryPercentage: {
-    fontSize: 48,
+    fontSize: 42,
     fontWeight: "bold",
     color: "#10b981",
-    marginBottom: 32,
+    marginBottom: 24,
   },
   summaryButtons: {
     width: "100%",
-    gap: 12,
+    gap: 10,
+    paddingHorizontal: 4,
   },
   button: {
     height: 50,
